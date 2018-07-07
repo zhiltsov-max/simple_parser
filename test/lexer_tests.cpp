@@ -13,7 +13,7 @@ TEST(LexerTests, can_create)
 {
   std::stringstream ss;
 
-  ASSERT_NO_THROW(Lexer lexer(ss));
+  ASSERT_NO_THROW(Lexer{ss});
 }
 
 TEST(LexerTests, can_parse_eof)
@@ -79,6 +79,19 @@ TEST(LexerTests, can_not_parse_key_with_control_char)
 TEST(LexerTests, can_parse_value_ansi)
 {
   std::string const value = "value";
+  std::string const line = "\"" + value + "\"";
+  std::stringstream ss(line);
+  Lexer lexer(ss);
+
+  Token token = lexer.getCurrent();
+
+  ASSERT_TRUE(TokenKind::Value == token.getKind());
+  EXPECT_EQ(value, token.getText());
+}
+
+TEST(LexerTests, can_parse_value_empty)
+{
+  std::string const value = "";
   std::string const line = "\"" + value + "\"";
   std::stringstream ss(line);
   Lexer lexer(ss);
