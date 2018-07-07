@@ -6,9 +6,9 @@ target_include_directories(parser
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../include>
     $<INSTALL_INTERFACE:include>
   )
-set_property(TARGET parser PROPERTY CXX_STANDARD 14)
 
 install(TARGETS parser
+  EXPORT ${PROJECT_NAME}Targets
   RUNTIME DESTINATION bin
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
@@ -19,4 +19,4 @@ install(DIRECTORY ../include
     include
   )
 
-add_library(parser::parser ALIAS parser)
+add_library(Parser::Parser ALIAS parser)
