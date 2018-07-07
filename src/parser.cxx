@@ -1,6 +1,7 @@
 #include "parser.hxx"
 
 #include <algorithm>
+#include <array>
 #include <exception>
 #include <iostream>
 #include <iterator>
@@ -33,47 +34,47 @@ char const* Exception::what() const noexcept
 }
 
 
-Lexer::Token::Token()
+Token::Token()
   : m_kind(TokenKind::Unknown)
   , m_value()
 {}
 
-Lexer::Token::Token(TokenKind kind, std::string const& value)
+Token::Token(TokenKind kind, std::string const& value)
   : m_kind(kind)
   , m_value(value)
 {}
 
-Lexer::Token::operator bool() const
+Token::operator bool() const
 {
   return (m_kind != TokenKind::Unknown);
 }
 
-Lexer::TokenKind const& Lexer::Token::getKind() const
+TokenKind const& Token::getKind() const
 {
   return m_kind;
 }
 
-Lexer::Token::ValueType const& Lexer::Token::getText() const
+Token::ValueType const& Token::getText() const
 {
   return m_value;
 }
 
-bool operator == (std::string const& a, Lexer::Token const& b)
+bool operator == (std::string const& a, Token const& b)
 {
-  return (b.m_kind == Lexer::TokenKind::Value) && (a == b.m_value);
+  return (b.m_kind == TokenKind::Value) && (a == b.m_value);
 }
 
-bool operator == (Lexer::Token const& a, std::string const& b)
+bool operator == (Token const& a, std::string const& b)
 {
   return b == a;
 }
 
-bool operator == (Lexer::Token const& a, Lexer::TokenKind const& b)
+bool operator == (Token const& a, TokenKind const& b)
 {
   return a.getKind() == b;
 }
 
-bool operator == (Lexer::TokenKind const& a, Lexer::Token const& b)
+bool operator == (TokenKind const& a, Token const& b)
 {
   return b == a;
 }
@@ -122,7 +123,8 @@ struct Lexer::impl {
   {
     char symbol = lexer.peekChar();
     while (isIgnored(symbol)) {
-      symbol = lexer.getChar();
+      lexer.getChar();
+      symbol = lexer.peekChar();
     }
   }
 
@@ -142,32 +144,128 @@ struct Lexer::impl {
 
   static bool isIgnored(char c)
   {
-    return std::isspace(c, s_utf8locale)
-        || std::iscntrl(c, s_utf8locale);
+    return std::isspace(c, s_cLocale)
+        || std::iscntrl(c, s_cLocale);
   }
 
   static bool isKeyBeginner(char c)
   {
-    return std::isalpha(c, s_defaultLocale)
-        || std::isdigit(c, s_defaultLocale)
+    return std::isalpha(c, s_cLocale)
+        || std::isdigit(c, s_cLocale)
         || (c == '_');
+  }
+
+  using CodePoint = int;
+  static_assert(4 <= sizeof(CodePoint),
+    "Target platform has too narrow 'int' type");
+
+  // Make UTF-8 code point from escape sequence of 4 hex digits like '0xFFFF'.
+  static CodePoint makeCodepoint(std::array<char, 4> const& escapeSequence)
+  {
+    using EscapeSequenceType = std::decay_t<decltype(escapeSequence)>;
+    constexpr int escapeSequenceLength =
+      std::tuple_size<EscapeSequenceType>::value;
+    static_assert(4 == escapeSequenceLength,
+      "Unexpected escape sequence length");
+    constexpr int bitsPerDigit = 4;
+
+    CodePoint codepoint = 0;
+    for (int i = 0; i != escapeSequenceLength; ++i) {
+      char const digit = escapeSequence[i];
+      int const power = (escapeSequenceLength - 1 - i) * bitsPerDigit;
+
+      if (('0' <= digit) && (digit <= '9')) {
+        codepoint += ((digit - int('0')) << power);
+      } else if (('a' <= digit) && (digit <= 'f')) {
+        codepoint += ((digit - int('a')) << power);
+      } else if (('A' <= digit) && (digit <= 'F')) {
+        codepoint += ((digit - int('A')) << power);
+      } else {
+        fail("Unexpected symbol found in escape sequence");
+      }
+    }
+
+    if (((0x0000 <= codepoint) && (codepoint <= 0xFFFF)) == false) {
+      fail("Wrong escaped codepoint");
+    }
+
+    return codepoint;
+  }
+
+  static std::initializer_list<char> makeCodeunits(CodePoint codepoint)
+  {
+    if (codepoint < 0x80) {
+      // 1-byte characters: 0xxxxxxx (ASCII)
+      return {
+        static_cast<char>(codepoint)
+      };
+    } else if (codepoint <= 0x7FF) {
+      // 2-byte characters: 110xxxxx 10xxxxxx
+      return {
+        static_cast<char>(0xC0 | (codepoint >> 6)),
+        static_cast<char>(0x80 | (codepoint & 0x3F))
+      };
+    } else if (codepoint <= 0xFFFF) {
+      // 3-byte characters: 1110xxxx 10xxxxxx 10xxxxxx
+      return {
+        static_cast<char>(0xE0 | (codepoint >> 12)),
+        static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F)),
+        static_cast<char>(0x80 | (codepoint & 0x3F))
+      };
+    } else {
+      // 4-byte characters: 11110xxx 10xxxxxx 10xxxxxx 10xxxxxx
+      return {
+        static_cast<char>(0xF0 | (codepoint >> 18)),
+        static_cast<char>(0x80 | ((codepoint >> 12) & 0x3F)),
+        static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F)),
+        static_cast<char>(0x80 | (codepoint & 0x3F))
+      };
+    }
   }
 
   static Token readKey(Lexer& lexer)
   {
     auto isKeyInternal = [&] (char c) {
-      return std::isalpha(c, s_defaultLocale)
-        || std::isdigit(c, s_defaultLocale)
+      return std::isalpha(c, s_cLocale)
+        || std::isdigit(c, s_cLocale)
         || (c == '_');
     };
 
     std::string buffer;
     char c = lexer.peekChar();
-    while ((c != s_keySeparator) && isKeyInternal(c)) {
+    while ((c != s_keySeparator) && !isIgnored(c)) {
+      if (!isKeyInternal(c)) {
+        fail("Unexpected symbol found in key");
+      }
       buffer.append({ c });
-      c = lexer.getChar();
+      lexer.getChar();
+      c = lexer.peekChar();
     }
     return { TokenKind::Key, std::move(buffer) };
+  }
+
+  static CodePoint readEscapedCodepoint(Lexer& lexer)
+  {
+    std::array<char, 4> escapeSequence = { 0 };
+    for (char& elem : escapeSequence) {
+      elem = lexer.getChar();
+    }
+    return makeCodepoint(escapeSequence);
+  }
+
+  static constexpr bool isHighSurrogate(CodePoint codepoint)
+  {
+    return (0xD800 <= codepoint) && (codepoint <= 0xDBFF);
+  }
+
+  static constexpr bool isLowSurrogate(CodePoint codepoint)
+  {
+    return (0xDC00 <= codepoint) && (codepoint <= 0xDFFF);
+  }
+
+  static constexpr int makeSurrogate(CodePoint codepoint1, CodePoint codepoint2)
+  {
+    return (codepoint1 << 10) + codepoint2 - 0x35FDC00;
   }
 
   static Token readValue(Lexer& lexer)
@@ -183,12 +281,19 @@ struct Lexer::impl {
         lexer.getChar();
         return { s_escape };
       } else if (check(lexer, 'x')) {
-        constexpr size_t maxEscapeSequenceLength = 4;
-        char escapeSequence[maxEscapeSequenceLength] = { 0 };
-        for (char& elem : escapeSequence) {
-          elem = lexer.getChar();
+        lexer.getChar();
+        CodePoint codepoint = readEscapedCodepoint(lexer);
+        if (isHighSurrogate(codepoint)) {
+          CodePoint const highSurrogate = codepoint;
+
+          expect(lexer, { s_escape, 'x' }, "Expected low surrogate in pair");
+          CodePoint const lowSurrogate = readEscapedCodepoint(lexer);
+          if (!isLowSurrogate(lowSurrogate)) {
+            fail("Wrong low surrogate in pair");
+          }
+          codepoint = makeSurrogate(highSurrogate, lowSurrogate);
         }
-        return { std::begin(escapeSequence), std::end(escapeSequence) };
+        return makeCodeunits(codepoint);
       }
 
       fail("Unknown escape sequence");
@@ -196,9 +301,11 @@ struct Lexer::impl {
 
     auto readUnescaped = [&] () -> char {
       char const c = lexer.peekChar();
-      if (std::iscntrl(c, s_utf8locale)) {
+      if (std::iscntrl(c, s_cLocale)) {
         fail("Unexpected character");
       }
+      lexer.getChar();
+      // TODO: check for overlong UTF-8 sequences
       return c;
     };
 
@@ -213,7 +320,7 @@ struct Lexer::impl {
       } else {
         buffer.append({ readUnescaped() });
       }
-      c = lexer.getChar();
+      c = lexer.peekChar();
     }
 
     return { TokenKind::Value, std::move(buffer) };
@@ -250,6 +357,9 @@ struct Lexer::impl {
     if (!check(lexer, expected)) {
       fail(failMessage);
     }
+    for (size_t i = 0; i != expected.size(); ++i) {
+      lexer.getChar();
+    }
   }
 
   static bool expect(Lexer& lexer, char expected,
@@ -258,6 +368,7 @@ struct Lexer::impl {
     if (!check(lexer, expected)) {
       fail(failMessage);
     }
+    lexer.getChar();
   }
 
   static bool check(Lexer& lexer, std::string const& expected)
@@ -269,7 +380,8 @@ struct Lexer::impl {
     char c = lexer.peekChar();
     while ((iExpected != iExpectedEnd) && (c == *iExpected)) {
         ++iExpected;
-        c = lexer.getChar();
+        lexer.getChar();
+        c = lexer.peekChar();
     }
     bool const result = iExpected == iExpectedEnd;
 
@@ -289,8 +401,7 @@ struct Lexer::impl {
   }
 
 
-  static std::locale const s_utf8locale;
-  static std::locale const s_defaultLocale;
+  static std::locale const s_cLocale;
   static constexpr char s_keySeparator = ':';
   static constexpr char s_entrySeparator = ',';
   static constexpr char s_sectionBegin = '{';
@@ -300,15 +411,14 @@ struct Lexer::impl {
   static constexpr char s_escape = '\\';
 };
 
-std::locale const Lexer::impl::s_utf8locale = std::locale("en_US.UTF-8");
-std::locale const Lexer::impl::s_defaultLocale = std::locale("");
+std::locale const Lexer::impl::s_cLocale = std::locale();
 
 Lexer::Lexer(std::istream& is)
   : m_stream(is)
   , m_lastToken()
 {}
 
-Lexer::Token const& Lexer::getCurrent()
+Token const& Lexer::getCurrent()
 {
   if (!m_lastToken || !isFinished()) {
     return getNext();
@@ -316,7 +426,7 @@ Lexer::Token const& Lexer::getCurrent()
   return m_lastToken;
 }
 
-Lexer::Token const& Lexer::getNext()
+Token const& Lexer::getNext()
 {
   if (isFinished()) {
     return m_lastToken;
@@ -406,9 +516,6 @@ struct Parser::impl {
     ProductKind m_kind;
     std::string m_value;
   };
-
-  using TokenKind = Lexer::TokenKind;
-  using Token = Lexer::Token;
 
   // Transition function result
   enum class ActionKind {

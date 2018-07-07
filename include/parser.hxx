@@ -31,46 +31,47 @@ namespace parsing {
 //   qq :"hello"
 // }
 //
+
+enum class TokenKind : int {
+  Unknown = 0,
+  Key,
+  Value,
+  SectionBegin,
+  SectionEnd,
+  EntrySeparator,
+  KeyValueSeparator,
+
+  ParseEnd,
+  ParseError,
+
+  _count // keep last
+};
+
+class Token {
+public:
+  using ValueType = std::string;
+
+  Token();
+  Token(TokenKind kind, std::string const& value);
+
+  TokenKind const& getKind() const;
+  ValueType const& getText() const;
+
+  operator bool() const;
+
+  friend bool operator == (std::string const& a, Token const& b);
+  friend bool operator == (Token const& a, std::string const& b);
+
+  friend bool operator == (Token const& a, TokenKind const& b);
+  friend bool operator == (TokenKind const& a, Token const& b);
+
+private:
+  TokenKind m_kind;
+  ValueType m_value;
+};
+
 class Lexer {
 public:
-  enum class TokenKind : int {
-    Unknown = 0,
-    Key,
-    Value,
-    SectionBegin,
-    SectionEnd,
-    EntrySeparator,
-    KeyValueSeparator,
-
-    ParseEnd,
-    ParseError,
-
-    _count // keep last
-  };
-
-  class Token {
-  public:
-    using ValueType = std::string;
-
-    Token();
-    Token(TokenKind kind, std::string const& value);
-
-    TokenKind const& getKind() const;
-    ValueType const& getText() const;
-
-    operator bool() const;
-
-    friend bool operator == (std::string const& a, Token const& b);
-    friend bool operator == (Token const& a, std::string const& b);
-
-    friend bool operator == (Token const& a, TokenKind const& b);
-    friend bool operator == (TokenKind const& a, Token const& b);
-
-  private:
-    TokenKind m_kind;
-    ValueType m_value;
-  };
-
   Lexer(std::istream& is);
 
   Token const& getCurrent();
