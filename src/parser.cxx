@@ -322,6 +322,7 @@ struct Lexer::impl {
       }
       c = lexer.peekChar();
     }
+    lexer.getChar();
 
     return { TokenKind::Value, std::move(buffer) };
   }
@@ -351,7 +352,7 @@ struct Lexer::impl {
   }
 
 
-  static bool expect(Lexer& lexer, std::string const& expected,
+  static void expect(Lexer& lexer, std::string const& expected,
     char const* failMessage)
   {
     if (!check(lexer, expected)) {
@@ -362,7 +363,7 @@ struct Lexer::impl {
     }
   }
 
-  static bool expect(Lexer& lexer, char expected,
+  static void expect(Lexer& lexer, char expected,
     char const* failMessage)
   {
     if (!check(lexer, expected)) {
@@ -395,7 +396,8 @@ struct Lexer::impl {
     return lexer.peekChar() == expected;
   }
 
-  static Token fail(std::string const& message)
+  [[noreturn]]
+  static void fail(std::string const& message)
   {
     throw Exception(message);
   }
@@ -420,7 +422,7 @@ Lexer::Lexer(std::istream& is)
 
 Token const& Lexer::getCurrent()
 {
-  if (!m_lastToken || !isFinished()) {
+  if (!m_lastToken && !isFinished()) {
     return getNext();
   }
   return m_lastToken;
@@ -497,10 +499,8 @@ struct Parser::impl {
     Key,
     Value,
     KeyValueSeparator,
-    TextValue,
-
-    _count // keep last
-  };
+    TextValue
+   };
 
   // Set of possible token parsing products
   enum class ProductKind {
@@ -582,8 +582,8 @@ struct Parser::impl {
       auto const& token = lexer.getCurrent();
       return token.getKind() == kind;
     };
-    auto consume = [&] () -> Token const& {
-      auto const& current = lexer.getCurrent();
+    auto consume = [&] {
+      auto const current = lexer.getCurrent();
       lexer.getNext();
       return current;
     };
@@ -596,6 +596,7 @@ struct Parser::impl {
     switch (state) {
       case StateKind::Start:
         return Action::expect({ StateKind::Section });
+        break;
 
       case StateKind::Section:
         return Action::expect({
@@ -603,6 +604,7 @@ struct Parser::impl {
           StateKind::Entries,
           StateKind::SectionEnd
         });
+        break;
 
       case StateKind::SectionBegin:
         if (check(TokenKind::SectionBegin)) {
@@ -611,6 +613,7 @@ struct Parser::impl {
             { ProductKind::SectionBegin, "" }
           });
         }
+        break;
 
       case StateKind::SectionEnd:
         if (check(TokenKind::SectionEnd)) {
@@ -619,6 +622,7 @@ struct Parser::impl {
             { ProductKind::SectionEnd, "" }
           });
         }
+        break;
 
       case StateKind::Entries:
         if (check(TokenKind::Key)) {
@@ -626,6 +630,7 @@ struct Parser::impl {
         } else {
           return Action::expect({ /* none */ });
         }
+        break;
 
       case StateKind::Entry:
         return Action::expect({
@@ -633,6 +638,7 @@ struct Parser::impl {
           StateKind::KeyValueSeparator,
           StateKind::Value
         });
+        break;
 
       case StateKind::Key:
         if (check(TokenKind::Key)) {
@@ -642,6 +648,7 @@ struct Parser::impl {
             { ProductKind::Key, token.getText() }
           });
         }
+        break;
 
       case StateKind::KeyValueSeparator:
         if (check(TokenKind::KeyValueSeparator)) {
@@ -655,20 +662,32 @@ struct Parser::impl {
         } else if (check(TokenKind::SectionBegin)) {
           return Action::expect({ StateKind::Section });
         }
+        break;
 
       case StateKind::TextValue:
         if (check(TokenKind::Value)){
-          auto const& token = consume();
+          auto const token = consume();
           return Action::produce({
             { ProductKind::Value, token.getText() }
           });
         }
+        break;
 
       case StateKind::NextEntry:
         if (check(TokenKind::EntrySeparator)) {
-          return Action::expect({ StateKind::Entry });
+          return Action::expect({
+            StateKind::EntrySeparator,
+            StateKind::Entry
+          });
         } else {
           return Action::expect({ /* none */ });
+        }
+        break;
+
+      case StateKind::EntrySeparator:
+        if (check(TokenKind::EntrySeparator)) {
+          consume();
+          return Action::produce({ /* none */ });
         }
 
       // no default for warning
@@ -696,9 +715,15 @@ struct Parser::impl {
       });
     Key result;
     result.reserve(length);
-    std::for_each(parts.begin(), parts.end(), [&] (auto const& part) {
-      result.append(part).append(glue);
-    });
+    for (auto iParts = parts.begin(), iPartsEnd = parts.end();
+      iParts != iPartsEnd;)
+    {
+      result.append(*iParts);
+      ++iParts;
+      if (iParts != iPartsEnd) {
+        result.append(glue);
+      }
+    }
     return result;
   }
 
@@ -716,14 +741,20 @@ struct Parser::impl {
       switch (product.m_kind) {
         case ProductKind::SectionBegin:
         {
-          sectionsStack.push_back(lastKey);
-          auto category = join(sectionsStack, { s_categorySeparator });
-          tree.emplace(std::move(category), "");
+          if (!lastKey.empty()) {
+            sectionsStack.push_back(lastKey);
+          }
+          if (!sectionsStack.empty()) {
+            auto category = join(sectionsStack, { s_categorySeparator });
+            tree.emplace(std::move(category), "");
+          }
           break;
         }
 
         case ProductKind::SectionEnd:
-          sectionsStack.pop_back();
+          if (!sectionsStack.empty()) {
+            sectionsStack.pop_back();
+          }
           break;
 
         case ProductKind::Entry:
@@ -736,7 +767,12 @@ struct Parser::impl {
 
         case ProductKind::Value:
         {
-          auto category = join(sectionsStack, { s_categorySeparator });
+          Key category;
+          if (!sectionsStack.empty()) {
+            category.append(join(sectionsStack, { s_categorySeparator }));
+            category.append({ s_categorySeparator });
+          }
+          category.append(lastKey);
           tree.emplace(std::move(category), product.m_value);
           break;
         }

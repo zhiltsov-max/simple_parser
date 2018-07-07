@@ -42,9 +42,7 @@ enum class TokenKind : int {
   KeyValueSeparator,
 
   ParseEnd,
-  ParseError,
-
-  _count // keep last
+  ParseError
 };
 
 class Token {
