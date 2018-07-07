@@ -129,6 +129,44 @@ TEST(LexerTests, can_parse_value_with_escaped_chars)
   EXPECT_EQ(unescapedValue, token.getText());
 }
 
+TEST(LexerTests, can_not_parse_value_with_too_short_escape_sequence)
+{
+  std::string const escapedValue = "\\x123";
+  std::string const line = "\"" + escapedValue + "\"";
+  std::stringstream ss(line);
+  Lexer lexer(ss);
+
+  Token token = lexer.getCurrent();
+
+  ASSERT_TRUE(TokenKind::ParseError == token.getKind());
+}
+
+TEST(LexerTests, can_parse_value_with_surrogate_pair)
+{
+  std::string const escapedValue = "\\xDBFF\\xDFFF";
+  std::string const unescapedValue = u8"\U0010FFFF";
+  std::string const line = "\"" + escapedValue + "\"";
+  std::stringstream ss(line);
+  Lexer lexer(ss);
+
+  Token token = lexer.getCurrent();
+
+  ASSERT_TRUE(TokenKind::Value == token.getKind());
+  EXPECT_EQ(unescapedValue, token.getText());
+}
+
+TEST(LexerTests, can_not_parse_value_with_wrong_surrogate_pair)
+{
+  std::string const escapedValue = "\\xd890\\xd000";
+  std::string const line = "\"" + escapedValue + "\"";
+  std::stringstream ss(line);
+  Lexer lexer(ss);
+
+  Token token = lexer.getCurrent();
+
+  ASSERT_TRUE(TokenKind::ParseError == token.getKind());
+}
+
 TEST(LexerTests, can_not_parse_value_with_control_chars)
 {
   std::string const value = u8"\x02qq\x15";

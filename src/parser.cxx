@@ -175,11 +175,11 @@ struct Lexer::impl {
       int const power = (escapeSequenceLength - 1 - i) * bitsPerDigit;
 
       if (('0' <= digit) && (digit <= '9')) {
-        codepoint += ((digit - int('0')) << power);
+        codepoint += ((     digit - int('0')) << power);
       } else if (('a' <= digit) && (digit <= 'f')) {
-        codepoint += ((digit - int('a')) << power);
+        codepoint += ((10 + digit - int('a')) << power);
       } else if (('A' <= digit) && (digit <= 'F')) {
-        codepoint += ((digit - int('A')) << power);
+        codepoint += ((10 + digit - int('A')) << power);
       } else {
         fail("Unexpected symbol found in escape sequence");
       }
