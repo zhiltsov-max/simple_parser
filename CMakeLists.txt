@@ -5,6 +5,12 @@ project(Parser VERSION 0.1.0)
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+add_compile_options(
+  $<$<CXX_COMPILER_ID:MSVC>:/W4>
+  $<$<CXX_COMPILER_ID:GNU>:-Wall>
+  $<$<CXX_COMPILER_ID:GNU>:-Wextra>
+  )
+
 add_subdirectory(src)
 
 enable_testing()
