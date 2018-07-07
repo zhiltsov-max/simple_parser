@@ -329,13 +329,13 @@ struct Lexer::impl {
   static Token readSectionBegin(Lexer& lexer)
   {
     expect(lexer, s_sectionBegin, "Expected section begin");
-    return { TokenKind::KeyValueSeparator, { s_sectionBegin } };
+    return { TokenKind::SectionBegin, { s_sectionBegin } };
   }
 
   static Token readSectionEnd(Lexer& lexer)
   {
     expect(lexer, s_sectionEnd, "Expected section end");
-    return { TokenKind::KeyValueSeparator, { s_sectionEnd } };
+    return { TokenKind::SectionEnd, { s_sectionEnd } };
   }
 
   static Token readKeySeparator(Lexer& lexer)

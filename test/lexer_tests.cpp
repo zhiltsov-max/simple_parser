@@ -178,3 +178,72 @@ TEST(LexerTests, can_not_parse_value_with_control_chars)
 
   ASSERT_TRUE(TokenKind::ParseError == token.getKind());
 }
+
+TEST(LexerTests, can_parse_utf8_bom)
+{
+  std::string const value = "vqa";
+  std::string const line = "\xEF\xBB\xBF" "\"" + value + "\"";
+  std::stringstream ss(line);
+  Lexer lexer(ss);
+
+  Token token = lexer.getCurrent();
+
+  ASSERT_TRUE(TokenKind::Value == token.getKind());
+  EXPECT_EQ(value, token.getText());
+}
+
+TEST(LexerTests, can_not_parse_wrong_utf8_bom)
+{
+  std::string const value = "vqa";
+  std::string const line = "\xEF\xAA\xAA" "\"" + value + "\"";
+  std::stringstream ss(line);
+  Lexer lexer(ss);
+
+  Token token = lexer.getCurrent();
+
+  ASSERT_TRUE(TokenKind::ParseError == token.getKind());
+}
+
+TEST(LexerTests, can_parse_section_begin)
+{
+  std::string const line = "{";
+  std::stringstream ss(line);
+  Lexer lexer(ss);
+
+  Token token = lexer.getCurrent();
+
+  ASSERT_TRUE(TokenKind::SectionBegin == token.getKind());
+}
+
+TEST(LexerTests, can_parse_section_end)
+{
+  std::string const line = "}";
+  std::stringstream ss(line);
+  Lexer lexer(ss);
+
+  Token token = lexer.getCurrent();
+
+  ASSERT_TRUE(TokenKind::SectionEnd == token.getKind());
+}
+
+TEST(LexerTests, can_parse_key_value_separator)
+{
+  std::string const line = ":";
+  std::stringstream ss(line);
+  Lexer lexer(ss);
+
+  Token token = lexer.getCurrent();
+
+  ASSERT_TRUE(TokenKind::KeyValueSeparator == token.getKind());
+}
+
+TEST(LexerTests, can_parse_entry_separator)
+{
+  std::string const line = ",";
+  std::stringstream ss(line);
+  Lexer lexer(ss);
+
+  Token token = lexer.getCurrent();
+
+  ASSERT_TRUE(TokenKind::EntrySeparator == token.getKind());
+}
