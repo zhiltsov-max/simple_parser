@@ -31,3 +31,38 @@ Example:
   utf8_value: "привет"
 }
 ```
+
+## Installation
+
+### Build
+
+``` bash
+git clone <this repo>
+mkdir build && cd build
+cmake ..
+cmake --build .
+```
+
+### Usage
+
+The code might be integrated to CMake projects with the following steps:
+
+``` cmake
+find_package(Parser REQUIRED)
+...
+target_link_libraries(your_target
+  PRIVATE # or PUBLIC, or INTERFACE
+    Parser::Parser
+  )
+```
+
+All the definitions and dependencies will be added automatically.
+
+
+### Running unit tests
+
+``` bash
+cmake . -DBUILD_TESTING=ON
+cmake --build .
+cmake --build . --target unit_tests
+```
